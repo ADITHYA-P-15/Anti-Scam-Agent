@@ -1,0 +1,23 @@
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+pydantic-settings==2.1.0
+
+# LLM
+anthropic==0.8.1
+
+# Database & Storage
+redis[asyncio]==5.0.1
+
+# Utilities
+python-dotenv==1.0.0
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.21.1
+httpx==0.25.2
+
+# Optional: For advanced features
+# langgraph==0.0.50  # If using LangGraph
+# spacy==3.7.2  # If using spaCy for NER
