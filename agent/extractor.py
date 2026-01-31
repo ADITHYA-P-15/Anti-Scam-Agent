@@ -1,14 +1,16 @@
 """
 Intelligence Extractor - Layer 3
-Multi-format extraction using regex + LLM validation
+Multi-format extraction with semantic analysis
+Handles obfuscated UPIs, hidden bank details, etc.
 """
 
 import re
-from typing import Dict, List
+from typing import Dict, List, Optional
 import logging
-from anthropic import Anthropic
 import os
 import json
+
+from agent.models import ExtractedEntities, BankAccount
 
 logger = logging.getLogger(__name__)
 
@@ -16,343 +18,342 @@ logger = logging.getLogger(__name__)
 class IntelligenceExtractor:
     """
     Extract financial/contact intelligence from scammer messages
+    Uses regex + LLM for semantic extraction
     """
     
-    # Regex patterns for different data types
+    # ==========================================================================
+    # REGEX PATTERNS
+    # ==========================================================================
+    
     PATTERNS = {
-        'upi_id': r'\b[a-zA-Z0-9._-]+@[a-zA-Z]{3,}\b',
-        'phone': r'\b(?:\+91|0)?[6-9]\d{9}\b',
+        # UPI IDs - standard and obfuscated
+        'upi_standard': r'\b[a-zA-Z0-9._-]+@[a-zA-Z]{2,}(?:axis|sbi|icici|hdfc|paytm|ybl|upi|apl|ibl|okaxis|oksbi|okicici)\b',
+        'upi_general': r'\b[a-zA-Z0-9._-]+@[a-zA-Z]{3,}\b',
+        
+        # Phone numbers (Indian)
+        'phone': r'\b(?:\+91[-\s]?|0)?[6-9]\d{9}\b',
+        'phone_spaced': r'\b(?:\+91\s?)?[6-9]\d{2}[-\s]?\d{3}[-\s]?\d{4}\b',
+        'phone_obfuscated': r'\b[6-9][\s\-\.]*\d[\s\-\.]*\d[\s\-\.]*\d[\s\-\.]*\d[\s\-\.]*\d[\s\-\.]*\d[\s\-\.]*\d[\s\-\.]*\d[\s\-\.]*\d\b',
+        
+        # Bank accounts
         'bank_account': r'\b\d{9,18}\b',
         'ifsc': r'\b[A-Z]{4}0[A-Z0-9]{6}\b',
-        'url': r'https?://[^\s<>"\)]+',
-        'amount': r'(?:Rs\.?|₹)\s*\d+(?:,\d+)*(?:\.\d{2})?',
-        'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b'
+        
+        # URLs
+        'url': r'https?://[^\s<>"\')\]]+',
+        'short_url': r'\b(?:bit\.ly|goo\.gl|tinyurl\.com|is\.gd|t\.co)/[a-zA-Z0-9]+\b',
+        
+        # Amounts
+        'amount_rupee': r'(?:Rs\.?|₹|INR|rupees?)\s*[\d,]+(?:\.\d{2})?',
+        'amount_lakh': r'\d+(?:\.\d+)?\s*(?:lakh|lac|lakhs)',
+        'amount_crore': r'\d+(?:\.\d+)?\s*(?:crore|cr)',
+        
+        # Email
+        'email': r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b',
     }
     
-    # Bank name patterns (for enrichment)
-    BANK_PATTERNS = {
-        'sbi': r'\bsbi\b|\bstate bank\b',
-        'hdfc': r'\bhdfc\b',
-        'icici': r'\bicici\b',
-        'axis': r'\baxis\b',
-        'paytm': r'\bpaytm\b',
-        'phonepe': r'\bphonepe\b',
-        'gpay': r'\bgpay\b|google pay',
-        'kotak': r'\bkotak\b'
+    # Bank name patterns
+    BANK_NAMES = {
+        'SBI': r'\b(?:sbi|state\s*bank)\b',
+        'HDFC': r'\bhdfc\b',
+        'ICICI': r'\bicici\b',
+        'AXIS': r'\baxis\b',
+        'KOTAK': r'\bkotak\b',
+        'PNB': r'\bpnb\b',
+        'BOB': r'\bbank\s*of\s*baroda\b',
+        'CANARA': r'\bcanara\b',
+        'PAYTM': r'\bpaytm\b',
+        'PHONEPE': r'\bphonepe\b',
+        'GPAY': r'\b(?:gpay|google\s*pay)\b',
+    }
+    
+    # Obfuscation patterns (e.g., "p-a-y-t-m" or "p a y t m")
+    DEOBFUSCATION_MAP = {
+        r'p[\s\-\.]*a[\s\-\.]*y[\s\-\.]*t[\s\-\.]*m': 'paytm',
+        r'g[\s\-\.]*p[\s\-\.]*a[\s\-\.]*y': 'gpay',
+        r'p[\s\-\.]*h[\s\-\.]*o[\s\-\.]*n[\s\-\.]*e[\s\-\.]*p[\s\-\.]*e': 'phonepe',
+        r's[\s\-\.]*b[\s\-\.]*i': 'sbi',
+        r'h[\s\-\.]*d[\s\-\.]*f[\s\-\.]*c': 'hdfc',
+        r'i[\s\-\.]*c[\s\-\.]*i[\s\-\.]*c[\s\-\.]*i': 'icici',
     }
     
     def __init__(self):
         """Initialize extractor with LLM client"""
-        api_key = os.getenv('ANTHROPIC_API_KEY')
-        self.client = Anthropic(api_key=api_key) if api_key else None
+        self.llm_available = False
+        self.genai_client = None
         
-        if not self.client:
-            logger.warning("No Anthropic API key - LLM extraction disabled")
+        # Try Gemini
+        google_key = os.getenv('GOOGLE_API_KEY')
+        if google_key:
+            try:
+                from google import genai
+                self.genai_client = genai.Client(api_key=google_key)
+                self.model = "gemini-2.0-flash"
+                self.llm_available = True
+                self._use_new_sdk = True
+                logger.info("✓ Gemini initialized for extraction")
+            except ImportError:
+                try:
+                    import google.generativeai as genai_old
+                    genai_old.configure(api_key=google_key)
+                    self.model = "gemini-1.5-flash"
+                    self.llm_available = True
+                    self._use_new_sdk = False
+                    logger.info("✓ Gemini (legacy) initialized for extraction")
+                except Exception as e:
+                    logger.warning(f"Gemini legacy init failed: {e}")
+            except Exception as e:
+                logger.warning(f"Gemini init failed: {e}")
+        
+        # Try Anthropic as fallback
+        self.anthropic_client = None
+        anthropic_key = os.getenv('ANTHROPIC_API_KEY')
+        if anthropic_key:
+            try:
+                from anthropic import Anthropic
+                self.anthropic_client = Anthropic(api_key=anthropic_key)
+                logger.info("✓ Anthropic initialized for extraction fallback")
+            except Exception as e:
+                logger.warning(f"Anthropic init failed: {e}")
+        
+        if not self.llm_available and not self.anthropic_client:
+            logger.warning("No LLM available - using regex extraction only")
+    
+    def _deobfuscate(self, message: str) -> str:
+        """Deobfuscate common patterns like 'p-a-y-t-m' -> 'paytm'"""
+        result = message.lower()
+        for pattern, replacement in self.DEOBFUSCATION_MAP.items():
+            result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+        return result
+    
+    def _extract_phone_numbers(self, message: str) -> List[str]:
+        """Extract phone numbers including obfuscated ones"""
+        phones = set()
+        
+        # Standard patterns
+        for pattern_name in ['phone', 'phone_spaced', 'phone_obfuscated']:
+            matches = re.findall(self.PATTERNS[pattern_name], message)
+            for match in matches:
+                # Normalize: remove spaces, dashes, dots
+                clean = re.sub(r'[\s\-\.]', '', match)
+                # Remove +91 or leading 0
+                if clean.startswith('+91'):
+                    clean = clean[3:]
+                elif clean.startswith('91') and len(clean) == 12:
+                    clean = clean[2:]
+                elif clean.startswith('0'):
+                    clean = clean[1:]
+                
+                # Validate: 10 digits starting with 6-9
+                if len(clean) == 10 and clean[0] in '6789':
+                    phones.add(clean)
+        
+        return list(phones)
+    
+    def _extract_upis(self, message: str) -> List[str]:
+        """Extract UPI IDs including from obfuscated text"""
+        upis = set()
+        
+        # Deobfuscate first
+        clean_message = self._deobfuscate(message)
+        
+        # Extract standard UPIs
+        for pattern_name in ['upi_standard', 'upi_general']:
+            matches = re.findall(self.PATTERNS[pattern_name], clean_message, re.IGNORECASE)
+            for upi in matches:
+                upi = upi.lower()
+                # Validate: must have @ and not be email-like
+                if '@' in upi and not upi.endswith(('.com', '.in', '.org', '.net')):
+                    upis.add(upi)
+        
+        # Also check original message
+        matches = re.findall(self.PATTERNS['upi_general'], message, re.IGNORECASE)
+        for upi in matches:
+            upi = upi.lower()
+            if '@' in upi and not upi.endswith(('.com', '.in', '.org', '.net')):
+                upis.add(upi)
+        
+        return list(upis)
+    
+    def _extract_bank_accounts(self, message: str) -> List[BankAccount]:
+        """Extract bank account numbers with IFSC"""
+        accounts = []
+        seen_numbers = set()
+        
+        # Find account numbers (9-18 digits)
+        acc_matches = re.findall(self.PATTERNS['bank_account'], message)
+        ifsc_matches = re.findall(self.PATTERNS['ifsc'], message)
+        
+        # Detect bank name
+        bank_name = 'unknown'
+        for name, pattern in self.BANK_NAMES.items():
+            if re.search(pattern, message, re.IGNORECASE):
+                bank_name = name
+                break
+        
+        for acc_num in acc_matches:
+            # Filter out likely phone numbers (10 digits starting with 6-9)
+            if len(acc_num) == 10 and acc_num[0] in '6789':
+                continue
+            
+            if acc_num not in seen_numbers:
+                seen_numbers.add(acc_num)
+                accounts.append(BankAccount(
+                    account_number=acc_num,
+                    ifsc=ifsc_matches[0] if ifsc_matches else None,
+                    bank_name=bank_name,
+                    confidence=0.9 if ifsc_matches else 0.7
+                ))
+        
+        return accounts
+    
+    def _extract_urls(self, message: str) -> List[str]:
+        """Extract URLs"""
+        urls = set()
+        
+        for pattern_name in ['url', 'short_url']:
+            matches = re.findall(self.PATTERNS[pattern_name], message)
+            urls.update(matches)
+        
+        return list(urls)
+    
+    def _extract_amounts(self, message: str) -> List[str]:
+        """Extract monetary amounts"""
+        amounts = set()
+        
+        for pattern_name in ['amount_rupee', 'amount_lakh', 'amount_crore']:
+            matches = re.findall(self.PATTERNS[pattern_name], message, re.IGNORECASE)
+            amounts.update(matches)
+        
+        return list(amounts)
+    
+    def _extract_emails(self, message: str) -> List[str]:
+        """Extract email addresses"""
+        emails = set()
+        matches = re.findall(self.PATTERNS['email'], message)
+        
+        for email in matches:
+            # Filter out UPI IDs
+            if not any(x in email.lower() for x in ['@paytm', '@ybl', '@okaxis', '@oksbi', '@upi']):
+                emails.add(email.lower())
+        
+        return list(emails)
     
     async def extract_intelligence(self, message: str, session: Dict) -> Dict:
         """
-        Main extraction method - parallel regex + LLM
-        
-        Returns:
-            {
-                'upi_ids': List[str],
-                'bank_accounts': List[Dict],
-                'phone_numbers': List[str],
-                'urls': List[str],
-                'amounts': List[str],
-                'emails': List[str]
-            }
+        Main extraction method
+        Returns dict compatible with ExtractedEntities
         """
-        # Step 1: Fast regex extraction
-        regex_data = self._extract_with_regex(message)
+        # Step 1: Regex extraction
+        extracted = {
+            'upi_ids': self._extract_upis(message),
+            'bank_accounts': [acc.model_dump() for acc in self._extract_bank_accounts(message)],
+            'phone_numbers': self._extract_phone_numbers(message),
+            'urls': self._extract_urls(message),
+            'amounts': self._extract_amounts(message),
+            'emails': self._extract_emails(message),
+        }
         
-        # Step 2: LLM extraction (if available)
-        llm_data = {}
-        if self.client:
+        # Step 2: LLM semantic extraction for complex cases
+        if self.llm_available or self.anthropic_client:
             try:
-                llm_data = await self._extract_with_llm(message)
+                llm_extracted = await self._llm_extraction(message)
+                if llm_extracted:
+                    # Merge LLM results
+                    for key in ['upi_ids', 'phone_numbers', 'urls', 'emails']:
+                        if llm_extracted.get(key):
+                            for item in llm_extracted[key]:
+                                if item not in extracted[key]:
+                                    extracted[key].append(item)
+                    
+                    # Handle bank accounts specially
+                    if llm_extracted.get('bank_accounts'):
+                        existing_nums = [acc.get('account_number') for acc in extracted['bank_accounts']]
+                        for acc in llm_extracted['bank_accounts']:
+                            if isinstance(acc, dict) and acc.get('account_number') not in existing_nums:
+                                extracted['bank_accounts'].append(acc)
             except Exception as e:
                 logger.error(f"LLM extraction failed: {e}")
         
-        # Step 3: Merge and validate
-        combined = self._merge_intelligence(regex_data, llm_data)
-        validated = self._validate_intelligence(combined)
-        
         logger.info(
-            f"Extracted: {len(validated.get('upi_ids', []))} UPI IDs, "
-            f"{len(validated.get('bank_accounts', []))} bank accounts, "
-            f"{len(validated.get('urls', []))} URLs"
+            f"Extracted: {len(extracted['upi_ids'])} UPIs, "
+            f"{len(extracted['bank_accounts'])} accounts, "
+            f"{len(extracted['phone_numbers'])} phones, "
+            f"{len(extracted['urls'])} URLs"
         )
-        
-        return validated
-    
-    def _extract_with_regex(self, message: str) -> Dict:
-        """
-        Fast regex-based extraction
-        """
-        extracted = {
-            'upi_ids': [],
-            'bank_accounts': [],
-            'phone_numbers': [],
-            'urls': [],
-            'amounts': [],
-            'emails': []
-        }
-        
-        # Extract UPI IDs
-        upi_matches = re.findall(self.PATTERNS['upi_id'], message)
-        extracted['upi_ids'] = [upi for upi in upi_matches if '@' in upi]
-        
-        # Extract phone numbers
-        phone_matches = re.findall(self.PATTERNS['phone'], message)
-        extracted['phone_numbers'] = phone_matches
-        
-        # Extract URLs
-        url_matches = re.findall(self.PATTERNS['url'], message)
-        extracted['urls'] = url_matches
-        
-        # Extract amounts
-        amount_matches = re.findall(self.PATTERNS['amount'], message)
-        extracted['amounts'] = amount_matches
-        
-        # Extract emails
-        email_matches = re.findall(self.PATTERNS['email'], message)
-        extracted['emails'] = email_matches
-        
-        # Extract bank account numbers (more complex)
-        account_matches = re.findall(self.PATTERNS['bank_account'], message)
-        ifsc_matches = re.findall(self.PATTERNS['ifsc'], message)
-        
-        # Try to pair accounts with IFSC codes
-        if account_matches:
-            for acc in account_matches:
-                # Check if there's an IFSC in the message
-                bank_info = {
-                    'account_number': acc,
-                    'ifsc': ifsc_matches[0] if ifsc_matches else None,
-                    'bank_name': self._detect_bank_name(message)
-                }
-                extracted['bank_accounts'].append(bank_info)
         
         return extracted
     
-    def _detect_bank_name(self, message: str) -> str:
-        """
-        Detect bank name from message context
-        """
-        message_lower = message.lower()
-        
-        for bank, pattern in self.BANK_PATTERNS.items():
-            if re.search(pattern, message_lower):
-                return bank.upper()
-        
-        return 'unknown'
-    
-    async def _extract_with_llm(self, message: str) -> Dict:
-        """
-        LLM-based extraction for complex cases
-        """
+    async def _llm_extraction(self, message: str) -> Optional[Dict]:
+        """Use LLM for semantic extraction"""
         prompt = f"""Extract financial and contact information from this message.
+Look for obfuscated data like "p-a-y-t-m" = paytm, spaced phone numbers, etc.
 
 Message: "{message}"
 
-Look for:
-- UPI IDs (format: name@bank)
-- Bank account numbers (9-18 digits)
-- IFSC codes (format: ABCD0123456)
-- Phone numbers (10 digits, may have +91 or 0 prefix)
-- URLs (especially suspicious ones)
-- Email addresses
-- Amounts mentioned (with currency)
-- Sender's name or alias
+Return JSON only (no markdown):
+{{"upi_ids": [], "bank_accounts": [{{"account_number": "", "ifsc": "", "bank_name": ""}}], "phone_numbers": [], "urls": [], "emails": []}}
 
-Respond ONLY with valid JSON (no markdown, no extra text):
-{{
-  "upi_ids": ["list of UPI IDs"],
-  "bank_accounts": [
-    {{"account_number": "...", "ifsc": "...", "bank_name": "..."}}
-  ],
-  "phone_numbers": ["list of phone numbers"],
-  "urls": ["list of URLs"],
-  "amounts": ["list of amounts"],
-  "emails": ["list of emails"],
-  "sender_identity": "name or alias"
-}}
+If nothing found, return empty arrays."""
 
-If nothing found for a category, return empty list/null. Be precise."""
-
-        try:
-            response = self.client.messages.create(
-                model="claude-3-5-haiku-20241022",
-                max_tokens=300,
-                temperature=0.1,  # Low temperature for precision
-                messages=[{"role": "user", "content": prompt}]
-            )
-            
-            result_text = response.content[0].text.strip()
-            
-            # Clean up markdown if present
-            if '```' in result_text:
-                result_text = result_text.split('```')[1]
-                if result_text.startswith('json'):
-                    result_text = result_text[4:]
-            
-            result = json.loads(result_text)
-            return result
+        # Try Gemini
+        if self.llm_available:
+            try:
+                if self._use_new_sdk:
+                    response = self.genai_client.models.generate_content(
+                        model=self.model,
+                        contents=prompt
+                    )
+                    result_text = response.text.strip()
+                else:
+                    import google.generativeai as genai
+                    model = genai.GenerativeModel(self.model)
+                    response = model.generate_content(prompt)
+                    result_text = response.text.strip()
+                
+                # Clean markdown
+                if '```' in result_text:
+                    result_text = result_text.split('```')[1]
+                    if result_text.startswith('json'):
+                        result_text = result_text[4:]
+                
+                return json.loads(result_text)
+            except Exception as e:
+                logger.error(f"Gemini extraction failed: {e}")
         
-        except Exception as e:
-            logger.error(f"LLM extraction error: {e}")
-            return {}
-    
-    def _merge_intelligence(self, regex_data: Dict, llm_data: Dict) -> Dict:
-        """
-        Merge regex and LLM results, preferring agreements
-        """
-        merged = {
-            'upi_ids': [],
-            'bank_accounts': [],
-            'phone_numbers': [],
-            'urls': [],
-            'amounts': [],
-            'emails': []
-        }
+        # Try Anthropic
+        if self.anthropic_client:
+            try:
+                response = self.anthropic_client.messages.create(
+                    model="claude-3-5-haiku-20241022",
+                    max_tokens=200,
+                    temperature=0.1,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                result_text = response.content[0].text.strip()
+                if '```' in result_text:
+                    result_text = result_text.split('```')[1]
+                    if result_text.startswith('json'):
+                        result_text = result_text[4:]
+                return json.loads(result_text)
+            except Exception as e:
+                logger.error(f"Anthropic extraction failed: {e}")
         
-        # Merge UPI IDs
-        all_upis = set(regex_data.get('upi_ids', []) + llm_data.get('upi_ids', []))
-        merged['upi_ids'] = list(all_upis)
-        
-        # Merge phone numbers
-        all_phones = set(regex_data.get('phone_numbers', []) + llm_data.get('phone_numbers', []))
-        merged['phone_numbers'] = list(all_phones)
-        
-        # Merge URLs
-        all_urls = set(regex_data.get('urls', []) + llm_data.get('urls', []))
-        merged['urls'] = list(all_urls)
-        
-        # Merge amounts
-        all_amounts = set(regex_data.get('amounts', []) + llm_data.get('amounts', []))
-        merged['amounts'] = list(all_amounts)
-        
-        # Merge emails
-        all_emails = set(regex_data.get('emails', []) + llm_data.get('emails', []))
-        merged['emails'] = list(all_emails)
-        
-        # Merge bank accounts (more complex - avoid duplicates)
-        all_accounts = regex_data.get('bank_accounts', []) + llm_data.get('bank_accounts', [])
-        seen_account_numbers = set()
-        
-        for acc in all_accounts:
-            acc_num = acc.get('account_number')
-            if acc_num and acc_num not in seen_account_numbers:
-                merged['bank_accounts'].append(acc)
-                seen_account_numbers.add(acc_num)
-        
-        return merged
-    
-    def _validate_intelligence(self, data: Dict) -> Dict:
-        """
-        Validate extracted data and calculate confidence
-        """
-        validated = {
-            'upi_ids': [],
-            'bank_accounts': [],
-            'phone_numbers': [],
-            'urls': [],
-            'amounts': [],
-            'emails': []
-        }
-        
-        # Validate UPI IDs
-        for upi in data.get('upi_ids', []):
-            if self._validate_upi(upi):
-                validated['upi_ids'].append(upi)
-            else:
-                logger.warning(f"Invalid UPI format: {upi}")
-        
-        # Validate phone numbers
-        for phone in data.get('phone_numbers', []):
-            if self._validate_phone(phone):
-                validated['phone_numbers'].append(phone)
-        
-        # Validate bank accounts - FIX: Don't use set() on dicts
-        seen_accounts = []
-        for acc in data.get('bank_accounts', []):
-            if self._validate_bank_account(acc):
-                # Check if we've seen this account number before
-                acc_num = acc.get('account_number')
-                if acc_num not in [a.get('account_number') for a in seen_accounts]:
-                    validated['bank_accounts'].append(acc)
-                    seen_accounts.append(acc)
-        
-        # URLs and amounts - less strict validation
-        validated['urls'] = list(set(data.get('urls', [])))
-        validated['amounts'] = data.get('amounts', [])
-        validated['emails'] = list(set(data.get('emails', [])))
-        
-        return validated
-    
-    def _validate_upi(self, upi: str) -> bool:
-        """Validate UPI ID format"""
-        # Must have @ and valid bank code
-        if '@' not in upi:
-            return False
-        
-        parts = upi.split('@')
-        if len(parts) != 2:
-            return False
-        
-        username, bank = parts
-        
-        # Username should be alphanumeric with dots/underscores
-        if not re.match(r'^[a-zA-Z0-9._-]+$', username):
-            return False
-        
-        # Bank code should be at least 3 characters
-        if len(bank) < 3:
-            return False
-        
-        return True
-    
-    def _validate_phone(self, phone: str) -> bool:
-        """Validate Indian phone number"""
-        # Remove +91 or 0 prefix
-        clean_phone = phone.replace('+91', '').replace('0', '', 1)
-        
-        # Should be 10 digits starting with 6-9
-        if len(clean_phone) == 10 and clean_phone[0] in '6789':
-            return True
-        
-        return False
-    
-    def _validate_bank_account(self, account: Dict) -> bool:
-        """Validate bank account structure"""
-        acc_num = account.get('account_number', '')
-        ifsc = account.get('ifsc', '')
-        
-        # Account number should be 9-18 digits
-        if not (9 <= len(acc_num) <= 18 and acc_num.isdigit()):
-            return False
-        
-        # If IFSC provided, validate format
-        if ifsc:
-            if not re.match(r'^[A-Z]{4}0[A-Z0-9]{6}$', ifsc):
-                logger.warning(f"Invalid IFSC format: {ifsc}")
-                return False
-        
-        return True
+        return None
 
 
-# Test
+# Standalone test
 if __name__ == "__main__":
     import asyncio
     
     extractor = IntelligenceExtractor()
     
     test_messages = [
-        "Please send ₹500 to scammer@paytm for verification",
+        "Send Rs 500 to scammer@paytm for verification",
         "My account number is 1234567890123 and IFSC is SBIN0001234",
-        "Call me at 9876543210 or visit http://fake-bank.com",
-        "Transfer to 9876543210@okaxis or use account 9876543210"
+        "Call me at 9 8 7 6 5 4 3 2 1 0 for help",
+        "Pay to p-a-y-t-m UPI: fraud@ybl or use http://fake-bank.com",
+        "Transfer to 9876543210@okaxis or account 9876543210",
     ]
     
     async def test():
