@@ -165,7 +165,12 @@ class ScamSimulator:
             
             # Track intelligence
             intel = response.get('intelligence', {})
-            intelligence_gathered['upi_ids'].update(intel.get('upi_ids', []))
+            # Handle both ValidatedUPI dicts and plain strings
+            for upi in intel.get('upi_ids', []):
+                if isinstance(upi, dict):
+                    intelligence_gathered['upi_ids'].add(upi.get('upi_id', str(upi)))
+                else:
+                    intelligence_gathered['upi_ids'].add(str(upi))
             intelligence_gathered['urls'].update(intel.get('urls', []))
             intelligence_gathered['phone_numbers'].update(intel.get('phone_numbers', []))
             

@@ -1,6 +1,7 @@
 """
 Anti-Scam Sentinel API - Main Application
-FastAPI server with rate limiting, input sanitization, and forensics
+FastAPI server with zero-latency perception, rate limiting, and forensics
+Enhanced with async background processing for <300ms responses
 """
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
@@ -29,7 +30,8 @@ from agent.session_manager import SessionManager
 from agent.metrics import MetricsCollector
 from agent.models import (
     MessageRequest, AgentResponse, ExtractedEntities, Forensics, 
-    ResponseMetadata, LegacyMessageEvent, LegacyAgentResponse, BankAccount
+    ResponseMetadata, LegacyMessageEvent, LegacyAgentResponse, BankAccount,
+    ValidatedUPI, TypingBehavior
 )
 
 # Logging
@@ -108,7 +110,7 @@ async def health_check():
 
 
 # =============================================================================
-# MAIN MESSAGE ENDPOINT (NEW FORMAT)
+# MAIN MESSAGE ENDPOINT (ZERO-LATENCY VERSION)
 # =============================================================================
 
 @app.post("/message", response_model=AgentResponse)
@@ -118,17 +120,17 @@ async def handle_message_v2(
     background_tasks: BackgroundTasks
 ):
     """
-    Main API endpoint - processes incoming scammer messages
-    Returns enhanced response with forensics
+    Main API endpoint - Zero-Latency Perception
+    Returns immediate response (<300ms), heavy processing runs in background
     """
     start_time = time.time()
     
     try:
-        # 1. Load session context
+        # 1. Load session context (fast - in-memory or Redis)
         session = await session_manager.load_session(event.session_id)
         logger.info(f"Session {event.session_id}: Loaded (phase={session.get('current_phase')})")
         
-        # 2. Run scam detection
+        # 2. FAST: Run rule-based scam detection (no LLM)
         if not session.get('scam_detected'):
             detection_result = await detector.detect(
                 event.message,
@@ -136,13 +138,7 @@ async def handle_message_v2(
             )
             session['scam_detected'] = detection_result.is_scam
             session['scam_metadata'] = detection_result.model_dump()
-            
-            logger.info(
-                f"Session {event.session_id}: Detection: is_scam={detection_result.is_scam}, "
-                f"score={detection_result.triad_score.total:.1f}/10, type={detection_result.scam_type}"
-            )
         else:
-            # Reconstruct detection result from saved metadata
             from agent.models import DetectionResult
             detection_result = DetectionResult(**session['scam_metadata'])
         
@@ -153,62 +149,69 @@ async def handle_message_v2(
             'timestamp': event.timestamp or datetime.now().isoformat()
         })
         
-        # 4. Parallel: Generate response + Extract intelligence
-        response_task = orchestrator.generate_response(session, detection_result)
-        extraction_task = extractor.extract_intelligence(event.message, session)
+        # 4. Detect scammer frustration (for typing behavior)
+        frustration = orchestrator._detect_frustration(event.message)
         
-        agent_response, new_intelligence = await asyncio.gather(
-            response_task,
-            extraction_task,
-            return_exceptions=True
+        # 5. FAST: Get template response immediately (no LLM wait)
+        fast_response = orchestrator.get_fallback_response(
+            session.get('current_phase', 'initial_contact'),
+            session.get('persona', 'elderly_tech_illiterate')
         )
         
-        # Handle exceptions
-        if isinstance(agent_response, Exception):
-            logger.error(f"Response generation failed: {agent_response}")
-            agent_response = orchestrator.get_fallback_response(session.get('current_phase', 'initial_contact'))
+        # 6. Calculate typing behavior for human-like simulation
+        phase_str = str(session.get('current_phase', 'initial_contact'))
+        if isinstance(phase_str, ConversationPhase):
+            phase_str = phase_str.value
+        typing_behavior = orchestrator._calculate_typing_behavior(
+            event.message, phase_str, frustration
+        )
         
-        if isinstance(new_intelligence, Exception):
-            logger.error(f"Intelligence extraction failed: {new_intelligence}")
-            new_intelligence = {}
+        # 7. BACKGROUND: Run expensive operations (LLM response, extraction)
+        async def background_processing():
+            try:
+                # Get LLM-generated response
+                llm_response = await orchestrator.generate_response(session, detection_result)
+                # Extract intelligence with LLM
+                intelligence = await extractor.extract_intelligence(event.message, session)
+                # Update session
+                orchestrator.update_session_state(session, intelligence, llm_response)
+                await session_manager.save_session(session)
+                logger.info(f"Session {event.session_id}: Background processing complete")
+            except Exception as e:
+                logger.error(f"Background processing error: {e}")
         
-        # 5. Update session state
+        background_tasks.add_task(background_processing)
+        
+        # 8. Update session state with fast response
         session = orchestrator.update_session_state(
-            session,
-            new_intelligence,
-            agent_response
+            session, {}, {'message': fast_response, 'phase': session.get('current_phase'), 'llm_used': 'template'}
         )
         
-        # 6. Calculate latency
+        # 9. Calculate latency (should be <300ms now)
         latency = time.time() - start_time
-        session.setdefault('engagement_metrics', {})['last_latency'] = latency
         
-        # 7. Save session (background)
-        background_tasks.add_task(session_manager.save_session, session)
-        
-        # 8. Log metrics (background)
-        background_tasks.add_task(
-            metrics.log_interaction,
-            session_id=event.session_id,
-            latency=latency,
-            phase=str(session.get('current_phase', 'initial_contact')),
-            intelligence_count=len(session.get('intelligence', {}).get('upi_ids', []))
-        )
-        
-        logger.info(
-            f"Session {event.session_id}: Response in {latency*1000:.0f}ms "
-            f"(phase={session.get('current_phase')}, turn={len(session.get('conversation_history', []))})"
-        )
-        
-        # 9. Build response
+        # 10. Build response with existing intelligence
         intel = session.get('intelligence', {})
+        
+        # Convert UPI strings to ValidatedUPI objects if needed
+        upi_list = []
+        for upi in intel.get('upi_ids', []):
+            if isinstance(upi, dict):
+                upi_list.append(ValidatedUPI(**upi))
+            elif isinstance(upi, str):
+                from agent.models import validate_upi
+                validation = validate_upi(upi)
+                upi_list.append(ValidatedUPI(**validation))
+            else:
+                upi_list.append(upi)
+        
         bank_accounts = [
             BankAccount(**acc) if isinstance(acc, dict) else acc
             for acc in intel.get('bank_accounts', [])
         ]
         
         extracted_entities = ExtractedEntities(
-            upi_ids=intel.get('upi_ids', []),
+            upi_ids=upi_list,
             bank_accounts=bank_accounts,
             urls=intel.get('urls', []),
             phone_numbers=intel.get('phone_numbers', []),
@@ -216,28 +219,48 @@ async def handle_message_v2(
             emails=intel.get('emails', [])
         )
         
-        # Determine threat level
+        # Determine threat level and intel quality
         triad = detection_result.triad_score
         if triad.total >= 7:
+            threat_level = "critical"
+        elif triad.total >= 5:
             threat_level = "high"
-        elif triad.total >= 4:
+        elif triad.total >= 3:
             threat_level = "med"
         else:
             threat_level = "low"
+        
+        # Assess intel quality
+        intel_score = extracted_entities.intel_completeness_score
+        if intel_score >= 60:
+            intel_quality = "actionable"
+        elif intel_score >= 30:
+            intel_quality = "partial"
+        else:
+            intel_quality = "low"
         
         forensics = Forensics(
             scam_type=detection_result.scam_type,
             threat_level=threat_level,
             detected_indicators=detection_result.detected_patterns,
-            persona_used=session.get('persona')
+            persona_used=session.get('persona'),
+            scammer_frustration=frustration,
+            intel_quality=intel_quality
         )
         
         metadata = ResponseMetadata(
-            phase=str(session.get('current_phase', 'initial_contact')),
+            phase=phase_str,
             persona=session.get('persona'),
             turn_count=len(session.get('conversation_history', [])),
             latency_ms=int(latency * 1000),
-            llm_used=agent_response.get('llm_used')
+            llm_used='template',  # Fast response uses templates
+            typing_behavior=typing_behavior,
+            processing_async=True  # Indicates background processing is running
+        )
+        
+        logger.info(
+            f"Session {event.session_id}: Fast response in {latency*1000:.0f}ms "
+            f"(phase={phase_str}, frustration={frustration})"
         )
         
         return AgentResponse(
@@ -245,7 +268,7 @@ async def handle_message_v2(
             is_scam=detection_result.is_scam,
             confidence_score=detection_result.confidence_score,
             extracted_entities=extracted_entities,
-            agent_response=agent_response.get('message', ''),
+            agent_response=fast_response,
             forensics=forensics,
             metadata=metadata
         )

@@ -1,17 +1,19 @@
 """
 Conversation Orchestrator - Layer 2
 State machine with dynamic personas and honey-token baiting
+Enhanced with typing delays and adversarial confusion tactics
 Uses google.genai SDK (new) with Anthropic fallback
 """
 
 from enum import Enum
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 import random
 import logging
 import os
 import json
+import re
 
-from agent.models import DetectionResult, ExtractedEntities
+from agent.models import DetectionResult, ExtractedEntities, TypingBehavior
 
 logger = logging.getLogger(__name__)
 
@@ -297,10 +299,96 @@ class ConversationOrchestrator:
         "Beta, I don't understand this technology talk. Just tell me how to pay.",
     ]
     
+    # Stalling / Confusion messages (buy time, simulate real user)
+    STALL_MESSAGES = [
+        "Wait, my phone is loading... give me a moment.",
+        "Sorry, my app froze. One second please.",
+        "Let me put my glasses on, I can't read properly.",
+        "Hold on, I'm getting another call.",
+        "My network is slow, please wait.",
+        "One moment, I need to find my reading glasses.",
+        "Sorry, can you repeat that? I was distracted.",
+        "Wait, my grandson is calling me. One minute.",
+    ]
+    
+    # Frustration patterns (detect when scammer is getting frustrated)
+    FRUSTRATION_PATTERNS = [
+        (r'\bwhat\s+is\s+taking\s+so\s+long\b', 'high'),
+        (r'\b(hurry|hurry\s+up|quick|quickly|fast)\b', 'medium'),
+        (r'\b(do\s+it\s+now|immediately|right\s+now)\b', 'high'),
+        (r'\b(are\s+you\s+stupid|idiot|fool)\b', 'high'),
+        (r'\b(dont\s+waste|wasting\s+(my)?\s*time)\b', 'high'),
+        (r'\b(i\s+said|already\s+told)\b', 'medium'),
+        (r'\b(why|why\s+not|just\s+do)\b.*\?', 'low'),
+        (r'[!]{2,}', 'medium'),  # Multiple exclamation marks
+        (r'[A-Z]{4,}', 'medium'),  # Excessive caps
+    ]
+    
     def __init__(self):
         """Initialize orchestrator with LLM client"""
         self.llm = LLMClient()
         logger.info("ConversationOrchestrator initialized")
+    
+    def _detect_frustration(self, message: str) -> str:
+        """Detect scammer frustration level"""
+        highest_level = 'none'
+        level_priority = {'none': 0, 'low': 1, 'medium': 2, 'high': 3}
+        
+        for pattern, level in self.FRUSTRATION_PATTERNS:
+            if re.search(pattern, message, re.IGNORECASE):
+                if level_priority[level] > level_priority[highest_level]:
+                    highest_level = level
+        
+        return highest_level
+    
+    def _calculate_typing_behavior(self, scammer_message: str, phase: str, frustration: str) -> TypingBehavior:
+        """Calculate human-like typing delay and stalling behavior"""
+        msg_length = len(scammer_message)
+        
+        # Base delay based on message length (reading time)
+        base_delay = min(msg_length * 20, 2000)  # ~20ms per char, max 2s
+        
+        # Adjust for phase (later phases = more "careful")
+        phase_multipliers = {
+            'initial_contact': 0.8,
+            'trust_building': 1.0,
+            'honey_token_bait': 1.2,
+            'extraction': 1.5,
+            'closing': 1.3,
+        }
+        phase_mult = phase_multipliers.get(phase, 1.0)
+        
+        # Adjust for frustration (if scammer frustrated, bot is "flustered")
+        frustration_delays = {
+            'none': 0,
+            'low': 500,
+            'medium': 1000,
+            'high': 1500,  # Bot is "panicking" too
+        }
+        frustration_add = frustration_delays.get(frustration, 0)
+        
+        # Calculate final delay
+        typing_delay = int(base_delay * phase_mult + frustration_add)
+        
+        # Determine if we should show stalling message
+        show_stall = False
+        stall_message = None
+        
+        # Stall if: long message + extraction phase OR high frustration
+        if (msg_length > 100 and phase in ['extraction', 'honey_token_bait']) or frustration == 'high':
+            show_stall = random.random() > 0.5  # 50% chance
+            if show_stall:
+                stall_message = random.choice(self.STALL_MESSAGES)
+        
+        # Calculate human simulation score (randomness)
+        human_score = 0.7 + random.random() * 0.25  # 0.7-0.95
+        
+        return TypingBehavior(
+            typing_delay_ms=typing_delay,
+            show_typing_indicator=typing_delay > 500,
+            stall_message=stall_message,
+            human_simulation_score=human_score
+        )
     
     async def generate_response(
         self, 
@@ -473,15 +561,15 @@ Generate ONLY your spoken response as this character (no quotes, no explanations
         
         return session
     
-    def get_fallback_response(self, phase: str) -> Dict:
-        """Get fallback response when everything fails"""
-        phase_enum = ConversationPhase(phase) if isinstance(phase, str) else phase
+    def get_fallback_response(self, phase: str, persona: str = None) -> str:
+        """Get fallback response for fast zero-latency mode"""
+        try:
+            phase_enum = ConversationPhase(phase) if isinstance(phase, str) else phase
+        except ValueError:
+            phase_enum = ConversationPhase.INITIAL_CONTACT
+        
         responses = self.FALLBACK_RESPONSES.get(phase_enum, self.FALLBACK_RESPONSES[ConversationPhase.TRUST_BUILDING])
-        return {
-            'message': random.choice(responses),
-            'phase': phase,
-            'llm_used': 'template'
-        }
+        return random.choice(responses)
 
 
 # For backward compatibility

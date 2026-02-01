@@ -2,6 +2,7 @@
 Intelligence Extractor - Layer 3
 Multi-format extraction with semantic analysis
 Handles obfuscated UPIs, hidden bank details, etc.
+Enhanced with UPI bank validation and intel scoring
 """
 
 import re
@@ -10,7 +11,7 @@ import logging
 import os
 import json
 
-from agent.models import ExtractedEntities, BankAccount
+from agent.models import ExtractedEntities, BankAccount, ValidatedUPI, validate_upi
 
 logger = logging.getLogger(__name__)
 
@@ -150,9 +151,10 @@ class IntelligenceExtractor:
         
         return list(phones)
     
-    def _extract_upis(self, message: str) -> List[str]:
-        """Extract UPI IDs including from obfuscated text"""
-        upis = set()
+    def _extract_upis(self, message: str) -> List[ValidatedUPI]:
+        """Extract UPI IDs with bank provider validation"""
+        upis = []
+        seen = set()
         
         # Deobfuscate first
         clean_message = self._deobfuscate(message)
@@ -164,16 +166,23 @@ class IntelligenceExtractor:
                 upi = upi.lower()
                 # Validate: must have @ and not be email-like
                 if '@' in upi and not upi.endswith(('.com', '.in', '.org', '.net')):
-                    upis.add(upi)
+                    if upi not in seen:
+                        seen.add(upi)
+                        # Validate and get bank provider
+                        validation = validate_upi(upi)
+                        upis.append(ValidatedUPI(**validation))
         
         # Also check original message
         matches = re.findall(self.PATTERNS['upi_general'], message, re.IGNORECASE)
         for upi in matches:
             upi = upi.lower()
             if '@' in upi and not upi.endswith(('.com', '.in', '.org', '.net')):
-                upis.add(upi)
+                if upi not in seen:
+                    seen.add(upi)
+                    validation = validate_upi(upi)
+                    upis.append(ValidatedUPI(**validation))
         
-        return list(upis)
+        return upis
     
     def _extract_bank_accounts(self, message: str) -> List[BankAccount]:
         """Extract bank account numbers with IFSC"""
@@ -244,9 +253,11 @@ class IntelligenceExtractor:
         Main extraction method
         Returns dict compatible with ExtractedEntities
         """
-        # Step 1: Regex extraction
+        # Step 1: Regex extraction with UPI validation
+        upi_list = self._extract_upis(message)
+        
         extracted = {
-            'upi_ids': self._extract_upis(message),
+            'upi_ids': [upi.model_dump() for upi in upi_list],
             'bank_accounts': [acc.model_dump() for acc in self._extract_bank_accounts(message)],
             'phone_numbers': self._extract_phone_numbers(message),
             'urls': self._extract_urls(message),
