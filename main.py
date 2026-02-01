@@ -8,7 +8,7 @@ from fastapi import FastAPI, BackgroundTasks, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 import asyncio
 import time
 from datetime import datetime
@@ -353,6 +353,113 @@ async def get_session(session_id: str):
 
 
 # =============================================================================
+# ANALYTICS ENDPOINT
+# =============================================================================
+
+from agent.analytics import (
+    scammer_profiler, webhook_manager, analytics_builder,
+    SessionAnalytics, ScammerProfile, ProfileMatch, WebhookConfig
+)
+
+@app.get("/analytics/{session_id}", response_model=SessionAnalytics)
+async def get_session_analytics(session_id: str):
+    """
+    Get detailed analytics for a session
+    Includes: timeline, indicators, intelligence score, profile link
+    """
+    session = await session_manager.load_session(session_id)
+    if not session.get('conversation_history'):
+        raise HTTPException(status_code=404, detail="Session not found or empty")
+    
+    analytics = analytics_builder.build(session)
+    return analytics
+
+
+# =============================================================================
+# WEBHOOK ENDPOINTS
+# =============================================================================
+
+class WebhookRegistration(BaseModel):
+    url: str
+    events: List[str] = ["scam_detected", "intel_extracted", "high_risk_profile"]
+    secret: Optional[str] = None
+
+@app.post("/webhook/register", response_model=WebhookConfig)
+async def register_webhook(config: WebhookRegistration):
+    """
+    Register a webhook for real-time notifications
+    Events: scam_detected, intel_extracted, high_risk_profile
+    """
+    webhook = webhook_manager.register(
+        url=config.url,
+        events=config.events,
+        secret=config.secret
+    )
+    return webhook
+
+
+@app.get("/webhook/list")
+async def list_webhooks():
+    """List all registered webhooks"""
+    return {"webhooks": [w.model_dump() for w in webhook_manager.list_webhooks()]}
+
+
+@app.delete("/webhook/{webhook_id}")
+async def delete_webhook(webhook_id: str):
+    """Unregister a webhook"""
+    success = webhook_manager.unregister(webhook_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Webhook not found")
+    return {"status": "deleted", "webhook_id": webhook_id}
+
+
+# =============================================================================
+# SCAMMER PROFILING ENDPOINTS
+# =============================================================================
+
+@app.get("/profile/lookup")
+async def lookup_profile(
+    upi: Optional[str] = None,
+    phone: Optional[str] = None,
+    account: Optional[str] = None
+):
+    """
+    Look up scammer profile by identifier
+    Returns matching profile if found
+    """
+    intelligence = {
+        'upi_ids': [{'upi_id': upi}] if upi else [],
+        'phone_numbers': [phone] if phone else [],
+        'bank_accounts': [{'account_number': account}] if account else []
+    }
+    
+    match = scammer_profiler.lookup(intelligence)
+    return match.model_dump()
+
+
+@app.get("/profile/{profile_id}", response_model=ScammerProfile)
+async def get_profile(profile_id: str):
+    """Get scammer profile by ID"""
+    profile = scammer_profiler.get_profile(profile_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Profile not found")
+    return profile
+
+
+@app.get("/profiles")
+async def list_profiles(limit: int = 50, min_risk: float = 0.0):
+    """List all scammer profiles, optionally filtered by risk score"""
+    profiles = scammer_profiler.get_all_profiles()
+    filtered = [p for p in profiles if p.risk_score >= min_risk]
+    sorted_profiles = sorted(filtered, key=lambda p: p.risk_score, reverse=True)[:limit]
+    return {
+        "total": len(profiles),
+        "filtered": len(sorted_profiles),
+        "profiles": [p.model_dump() for p in sorted_profiles]
+    }
+
+
+# =============================================================================
 # STARTUP/SHUTDOWN
 # =============================================================================
 
@@ -362,6 +469,8 @@ async def startup_event():
     logger.info("Starting Anti-Scam Sentinel API v2.0...")
     await session_manager.initialize()
     logger.info("✓ Session manager initialized")
+    logger.info("✓ Scammer profiler initialized")
+    logger.info("✓ Webhook manager initialized")
     logger.info("✓ All systems operational")
 
 
@@ -376,3 +485,4 @@ async def shutdown_event():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+

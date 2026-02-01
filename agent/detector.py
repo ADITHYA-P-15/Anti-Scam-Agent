@@ -52,6 +52,15 @@ class ScamDetector:
         # Government
         (r'\b(income tax|it department|gst|customs|police|cyber crime)\b', 2.0),
         (r'\b(government|ministry|department|official)\b', 1.5),
+        # INVESTMENT / TRADING (new patterns)
+        (r'\b(sebi|registered|regulated)\b', 2.0),
+        (r'\b(trader|trading|investor|investment|portfolio)\b', 1.5),
+        (r'\b(crypto|bitcoin|ethereum|binance|coin)\b', 2.0),
+        (r'\b(guaranteed|fixed|assured)\b.*(return|profit|income)s?', 2.5),
+        (r'(return|profit)s?.*(guaranteed|fixed|assured)', 2.5),
+        (r'(double|triple)\s*(your)?\s*(money|investment|income)', 2.5),
+        (r'\d+%\s*(return|profit|growth|gain)', 2.0),
+        (r'(monthly|daily|weekly)\s*(income|return|profit)', 1.5),
         # Tech companies
         (r'\b(instagram|facebook|whatsapp|google|microsoft|apple)\b.*\b(security|support|team)\b', 1.5),
         # Job/Companies
@@ -89,6 +98,12 @@ class ScamDetector:
         (r'(processing|verification|clearance|registration) (fee|charge|amount)', 1.5),
         (r'(refund|cashback|prize|reward) (of|worth|amount)', 1.0),
         (r'\b\d{9,18}\b', 0.5),  # Bank account numbers
+        # Investment-specific financial patterns
+        (r'(invest|investment)\s*(of)?\s*(rs\.?|₹|inr)?\s*\d+', 1.5),
+        (r'(minimum|start with|just)\s*(rs\.?|₹|inr)?\s*\d+', 1.0),
+        (r'(get|earn|receive)\s*(rs\.?|₹|inr)?\s*\d+', 1.0),
+        (r'\b(lakhs?|crores?)\b.*(profit|return)', 1.5),
+        (r'(profit|return).*(lakhs?|crores?)\b', 1.5),
     ]
     
     # ==========================================================================
