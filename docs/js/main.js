@@ -1,5 +1,5 @@
 const CONFIG = {
-    API_URL: window.location.hostname === 'localhost' ? 'http://localhost:8000' : 'https://your-railway-app.railway.app'
+    API_URL: window.location.hostname === 'localhost' ? 'http://localhost:8000' : 'https://anti-scam-agent-production.up.railway.app'
 };
 
 let sessionId = `demo-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
