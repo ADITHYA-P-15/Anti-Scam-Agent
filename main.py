@@ -152,27 +152,46 @@ async def analyze_message_get(message: str, session_id: str = "default"):
 # MAIN MESSAGE ENDPOINT (ZERO-LATENCY VERSION)
 # =============================================================================
 
-@app.post("/message", response_model=AgentResponse)
+@app.api_route("/message", methods=["GET", "POST"], response_model=None)
 async def handle_message_v2(
     request: Request,
-    event: MessageRequest,
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    # GET params
+    message: Optional[str] = None,
+    session_id: Optional[str] = None,
+    # POST body will be parsed manually
 ):
     """
     Main API endpoint - Zero-Latency Perception
+    Supports both GET and POST for hackathon compatibility
     Returns immediate response (<300ms), heavy processing runs in background
     """
     start_time = time.time()
     
+    # Handle both GET and POST
+    if request.method == "POST":
+        try:
+            body = await request.json()
+            session_id = body.get("session_id", "default")
+            message = body.get("message", "")
+        except:
+            pass
+    
+    if not message:
+        return {"error": "message parameter required", "usage": "GET /message?message=...&session_id=... or POST with JSON body"}
+    
+    if not session_id:
+        session_id = "default"
+    
     try:
         # 1. Load session context (fast - in-memory or Redis)
-        session = await session_manager.load_session(event.session_id)
-        logger.info(f"Session {event.session_id}: Loaded (phase={session.get('current_phase')})")
+        session = await session_manager.load_session(session_id)
+        logger.info(f"Session {session_id}: Loaded (phase={session.get('current_phase')})")
         
         # 2. FAST: Run rule-based scam detection (no LLM)
         if not session.get('scam_detected'):
             detection_result = await detector.detect(
-                event.message,
+                message,
                 session.get('conversation_history', [])
             )
             session['scam_detected'] = detection_result.is_scam
@@ -184,12 +203,12 @@ async def handle_message_v2(
         # 3. Add scammer message to history
         session.setdefault('conversation_history', []).append({
             'role': 'scammer',
-            'message': event.message,
-            'timestamp': event.timestamp or datetime.now().isoformat()
+            'message': message,
+            'timestamp': datetime.now().isoformat()
         })
         
         # 4. Detect scammer frustration (for typing behavior)
-        frustration = orchestrator._detect_frustration(event.message)
+        frustration = orchestrator._detect_frustration(message)
         
         # 5. FAST: Get template response immediately (no LLM wait)
         fast_response = orchestrator.get_fallback_response(
@@ -202,7 +221,7 @@ async def handle_message_v2(
         if isinstance(phase_str, ConversationPhase):
             phase_str = phase_str.value
         typing_behavior = orchestrator._calculate_typing_behavior(
-            event.message, phase_str, frustration
+            message, phase_str, frustration
         )
         
         # 7. BACKGROUND: Run expensive operations (LLM response, extraction)
@@ -211,11 +230,11 @@ async def handle_message_v2(
                 # Get LLM-generated response
                 llm_response = await orchestrator.generate_response(session, detection_result)
                 # Extract intelligence with LLM
-                intelligence = await extractor.extract_intelligence(event.message, session)
+                intelligence = await extractor.extract_intelligence(message, session)
                 # Update session
                 orchestrator.update_session_state(session, intelligence, llm_response)
                 await session_manager.save_session(session)
-                logger.info(f"Session {event.session_id}: Background processing complete")
+                logger.info(f"Session {session_id}: Background processing complete")
             except Exception as e:
                 logger.error(f"Background processing error: {e}")
         
