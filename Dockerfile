@@ -23,5 +23,5 @@ RUN mkdir -p logs
 # Expose port (Railway uses dynamic PORT)
 EXPOSE ${PORT:-8000}
 
-# Run the application - use shell form to expand $PORT
-CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}
+# Run the application - use shell form with explicit bash
+CMD ["/bin/sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"]
