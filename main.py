@@ -207,6 +207,40 @@ async def handle_message_v2(
             'timestamp': datetime.now().isoformat()
         })
         
+        # 3.5. PHASE PROGRESSION - Advance conversation phase based on turn count
+        turn_count = len([m for m in session.get('conversation_history', []) if m.get('role') == 'scammer'])
+        current_phase = session.get('current_phase', 'initial_contact')
+        
+        # Select persona based on scam type (if not already set)
+        if not session.get('persona') and detection_result.is_scam and detection_result.scam_type:
+            from agent.orchestrator import Persona
+            session['persona'] = Persona.select_for_scam(detection_result.scam_type)
+        
+        # Phase progression based on turn count and detection
+        if isinstance(current_phase, str):
+            phase_value = current_phase
+        else:
+            phase_value = current_phase.value if hasattr(current_phase, 'value') else str(current_phase)
+        
+        if phase_value == 'initial_contact' and turn_count >= 1:
+            # After first scammer message, move to trust building
+            session['current_phase'] = 'trust_building'
+        elif phase_value == 'trust_building' and turn_count >= 3:
+            # After a few turns, start honey token baiting
+            session['current_phase'] = 'honey_token_bait'
+        elif phase_value == 'honey_token_bait' and turn_count >= 5:
+            # Move to extraction for backup intel
+            session['current_phase'] = 'extraction'
+        elif phase_value == 'extraction' and turn_count >= 7:
+            # Start closing
+            session['current_phase'] = 'closing'
+        
+        # Also advance if scam is detected (accelerate to honey token)
+        if detection_result.is_scam and turn_count >= 2 and phase_value in ['initial_contact', 'trust_building']:
+            session['current_phase'] = 'honey_token_bait'
+        
+        logger.info(f"Session {session_id}: Phase advanced to {session.get('current_phase')} (turn {turn_count})")
+        
         # 4. Detect scammer frustration (for typing behavior)
         frustration = orchestrator._detect_frustration(message)
         
