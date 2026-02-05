@@ -244,39 +244,54 @@ async def handle_message_v2(
         # 4. Detect scammer frustration (for typing behavior)
         frustration = orchestrator._detect_frustration(message)
         
-        # 5. FAST: Get template response immediately (no LLM wait)
-        fast_response = orchestrator.get_fallback_response(
-            session.get('current_phase', 'initial_contact'),
-            session.get('persona', 'elderly_tech_illiterate')
-        )
+        # 5. Get CONTEXT-AWARE response (use LLM with timeout, fallback to smart template)
+        try:
+            # Try to get LLM response with 3 second timeout
+            llm_response_data = await asyncio.wait_for(
+                orchestrator.generate_response(session, detection_result),
+                timeout=3.0
+            )
+            agent_response = llm_response_data.get('message', '') if isinstance(llm_response_data, dict) else str(llm_response_data)
+            llm_used = "gemini"
+            logger.info(f"LLM response: {agent_response[:50]}...")
+        except asyncio.TimeoutError:
+            logger.warning("LLM timeout - using smart fallback")
+            agent_response = orchestrator.get_fallback_response(
+                session.get('current_phase', 'trust_building'),
+                session.get('persona', 'worried_account_holder')
+            )
+            llm_used = "template"
+        except Exception as e:
+            logger.error(f"LLM error: {e} - using fallback")
+            agent_response = orchestrator.get_fallback_response(
+                session.get('current_phase', 'trust_building'),
+                session.get('persona', 'worried_account_holder')
+            )
+            llm_used = "template"
         
         # 6. Calculate typing behavior for human-like simulation
-        phase_str = str(session.get('current_phase', 'initial_contact'))
+        phase_str = str(session.get('current_phase', 'trust_building'))
         if isinstance(phase_str, ConversationPhase):
             phase_str = phase_str.value
         typing_behavior = orchestrator._calculate_typing_behavior(
             message, phase_str, frustration
         )
         
-        # 7. BACKGROUND: Run expensive operations (LLM response, extraction)
+        # 7. BACKGROUND: Run intelligence extraction (lighter operation)
         async def background_processing():
             try:
-                # Get LLM-generated response
-                llm_response = await orchestrator.generate_response(session, detection_result)
-                # Extract intelligence with LLM
                 intelligence = await extractor.extract_intelligence(message, session)
-                # Update session
-                orchestrator.update_session_state(session, intelligence, llm_response)
+                orchestrator.update_session_state(session, intelligence, {'message': agent_response, 'llm_used': llm_used})
                 await session_manager.save_session(session)
-                logger.info(f"Session {session_id}: Background processing complete")
+                logger.info(f"Session {session_id}: Background extraction complete")
             except Exception as e:
                 logger.error(f"Background processing error: {e}")
         
         background_tasks.add_task(background_processing)
         
-        # 8. Update session state with fast response
+        # 8. Update session state
         session = orchestrator.update_session_state(
-            session, {}, {'message': fast_response, 'phase': session.get('current_phase'), 'llm_used': 'template'}
+            session, {}, {'message': agent_response, 'phase': session.get('current_phase'), 'llm_used': llm_used}
         )
         
         # 9. Calculate latency (should be <300ms now)
@@ -356,11 +371,11 @@ async def handle_message_v2(
         )
         
         return AgentResponse(
-            session_id=event.session_id,
+            session_id=session_id,
             is_scam=detection_result.is_scam,
             confidence_score=detection_result.confidence_score,
             extracted_entities=extracted_entities,
-            agent_response=fast_response,
+            agent_response=agent_response,
             forensics=forensics,
             metadata=metadata
         )
