@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Anti-Scam Sentinel | AI-Powered Scam Detection</title>
+    <meta name="description"
+        content="Intelligent honeypot agent that engages scammers to extract payment credentials for law enforcement.">
+    <link rel="stylesheet" href="css/main.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+    <link rel="icon" type="image/svg+xml"
+        href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🛡️</text></svg>">
+</head>
+
+<body>
+    <!-- Navigation -->
+    <nav class="navbar">
+        <div class="nav-container">
+            <a href="#" class="nav-logo">
+                <span class="logo-icon">🛡️</span>
+                <span class="logo-text">Anti-Scam Sentinel</span>
+            </a>
+            <div class="nav-links">
+                <a href="#features" class="nav-link">Features</a>
+                <a href="#how-it-works" class="nav-link">How It Works</a>
+                <a href="#demo" class="nav-link">Live Demo</a>
+                <a href="#dashboard" class="nav-link">Dashboard</a>
+                <a href="https://github.com/ADITHYA-P-15/Anti-Scam-Agent" target="_blank" class="nav-link nav-github">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                        <path
+                            d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
+                    </svg>
+                </a>
+            </div>
+            <button class="nav-toggle" aria-label="Toggle menu">
+                <span></span><span></span><span></span>
+            </button>
+        </div>
+    </nav>
+
+    <!-- Hero Section -->
+    <section class="hero">
+        <div class="hero-bg"></div>
+        <div class="hero-content">
+            <div class="hero-badge">
+                <span class="badge-dot"></span>
+                Powered by Google Gemini AI
+            </div>
+            <h1 class="hero-title">
+                Stop Scammers.<br>
+                <span class="gradient-text">Extract Intelligence.</span>
+            </h1>
+            <p class="hero-subtitle">
+                An AI-powered honeypot that engages phone scammers, wastes their time,
+                and extracts payment credentials for law enforcement.
+            </p>
+            <div class="hero-stats">
+                <div class="stat">
+                    <span class="stat-number" data-count="194">0</span><span class="stat-suffix">ms</span>
+                    <span class="stat-label">Response Time</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number" data-count="100">0</span><span class="stat-suffix">%</span>
+                    <span class="stat-label">Detection Rate</span>
+                </div>
+                <div class="stat">
+                    <span class="stat-number" data-count="60">0</span><span class="stat-suffix">+</span>
+                    <span class="stat-label">UPI Providers</span>
+                </div>
+            </div>
+            <div class="hero-buttons">
+                <a href="#demo" class="btn btn-primary">
+                    <span>Try Live Demo</span>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M5 12h14M12 5l7 7-7 7" />
+                    </svg>
+                </a>
+                <a href="https://github.com/ADITHYA-P-15/Anti-Scam-Agent" target="_blank" class="btn btn-secondary">
+                    View on GitHub
+                </a>
+            </div>
+        </div>
+        <div class="hero-visual">
+            <div class="chat-preview">
+                <div class="chat-header">
+                    <span class="chat-dot red"></span>
+                    <span class="chat-dot yellow"></span>
+                    <span class="chat-dot green"></span>
+                    <span class="chat-title">Scam Detection Live</span>
+                </div>
+                <div class="chat-messages">
+                    <div class="message scammer">
+                        <div class="message-content">Your SBI account will be blocked in 24 hours! Update KYC
+                            immediately.</div>
+                        <span class="message-badge danger">🚨 SCAM DETECTED</span>
+                    </div>
+                    <div class="message agent">
+                        <div class="message-content">Oh dear! What do I need to do? I'm not good with these things...
+                        </div>
+                        <span class="message-badge info">🎭 Elderly Persona</span>
+                    </div>
+                    <div class="message scammer">
+                        <div class="message-content">Send Rs 500 to verify.sbi@paytm</div>
+                    </div>
+                    <div class="intel-extracted">
+                        <span class="intel-icon">🎯</span>
+                        <span>UPI Extracted: <strong>verify.sbi@paytm</strong> (Paytm Payments Bank)</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Features Section -->
+    <section id="features" class="features">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Features</span>
+                <h2 class="section-title">Built for <span class="gradient-text">Maximum Impact</span></h2>
+                <p class="section-subtitle">Advanced AI capabilities to fight phone scams</p>
+            </div>
+            <div class="features-grid">
+                <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h3>Zero-Latency Detection</h3>
+                    <p>Scams detected in under 200ms using our Scam-Triad heuristic. Background LLM processing ensures
+                        instant responses.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🎭</div>
+                    <h3>Dynamic Personas</h3>
+                    <p>4 believable victim personas (elderly, student, professional, parent) that adapt to the scam
+                        type.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🏦</div>
+                    <h3>UPI Validation</h3>
+                    <p>60+ bank provider mappings. Identifies bank names from UPI handles (@ybl → Yes Bank).</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🕵️</div>
+                    <h3>Scammer Profiling</h3>
+                    <p>Tracks scammers across sessions. Links identities by UPI, phone, and bank accounts.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">📡</div>
+                    <h3>Webhook Alerts</h3>
+                    <p>Real-time notifications when scams are detected or credentials are extracted.</p>
+                </div>
+                <div class="feature-card">
+                    <div class="feature-icon">🛡️</div>
+                    <h3>Injection Protection</h3>
+                    <p>Detects and blocks prompt injection attempts. Agent stays in character.</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- How It Works Section -->
+    <section id="how-it-works" class="how-it-works">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Process</span>
+                <h2 class="section-title">How It <span class="gradient-text">Works</span></h2>
+            </div>
+            <div class="steps">
+                <div class="step">
+                    <div class="step-number">1</div>
+                    <div class="step-content">
+                        <h3>Scammer Initiates Contact</h3>
+                        <p>Message is analyzed using the Scam-Triad heuristic (Urgency + Authority + Emotion +
+                            Financial).</p>
+                        <div class="step-code">
+                            <code>Score: 5.5/10 → Scam Detected ✅</code>
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">2</div>
+                    <div class="step-content">
+                        <h3>Agent Engages as Victim</h3>
+                        <p>AI assumes a convincing persona and responds naturally, building trust with the scammer.</p>
+                        <div class="step-code">
+                            <code>Persona: elderly_tech_illiterate</code>
+                        </div>
+                    </div>
+                </div>
+                <div class="step">
+                    <div class="step-number">3</div>
+                    <div class="step-content">
+                        <h3>Intelligence Extracted</h3>
+                        <p>Payment credentials (UPI, bank accounts, phones) are captured and validated.</p>
+                        <div class="step-code">
+                            <code>UPI: fraud@paytm → Paytm Bank ✅</code>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Demo Section -->
+    <section id="demo" class="demo">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Interactive</span>
+                <h2 class="section-title">Live <span class="gradient-text">Demo</span></h2>
+                <p class="section-subtitle">Test the scam detection in real-time</p>
+            </div>
+            <div class="demo-container">
+                <div class="demo-chat">
+                    <div class="demo-chat-header">
+                        <div class="demo-chat-status">
+                            <span class="status-dot online"></span>
+                            <span>Anti-Scam Sentinel</span>
+                        </div>
+                        <button class="demo-reset" id="resetChat">Reset Chat</button>
+                    </div>
+                    <div class="demo-messages" id="chatMessages">
+                        <div class="demo-welcome">
+                            <p>👋 Send a scam message to see the detection in action!</p>
+                            <p class="demo-hint">Try: "Your bank account will be blocked! Send Rs 500 to verify@paytm"
+                            </p>
+                        </div>
+                    </div>
+                    <div class="demo-input-container">
+                        <input type="text" id="demoInput" class="demo-input" placeholder="Type a scam message..."
+                            autocomplete="off">
+                        <button class="demo-send" id="sendMessage">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z" />
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                <div class="demo-panel">
+                    <div class="panel-section">
+                        <h4>🔍 Detection Status</h4>
+                        <div class="detection-status" id="detectionStatus">
+                            <span class="status-label">Waiting for message...</span>
+                        </div>
+                    </div>
+                    <div class="panel-section">
+                        <h4>📊 Scam-Triad Score</h4>
+                        <div class="triad-scores" id="triadScores">
+                            <div class="triad-bar">
+                                <span class="triad-label">Urgency</span>
+                                <div class="triad-progress">
+                                    <div class="triad-fill" id="urgencyBar" style="width: 0%"></div>
+                                </div>
+                                <span class="triad-value" id="urgencyValue">0.0</span>
+                            </div>
+                            <div class="triad-bar">
+                                <span class="triad-label">Authority</span>
+                                <div class="triad-progress">
+                                    <div class="triad-fill" id="authorityBar" style="width: 0%"></div>
+                                </div>
+                                <span class="triad-value" id="authorityValue">0.0</span>
+                            </div>
+                            <div class="triad-bar">
+                                <span class="triad-label">Emotion</span>
+                                <div class="triad-progress">
+                                    <div class="triad-fill" id="emotionBar" style="width: 0%"></div>
+                                </div>
+                                <span class="triad-value" id="emotionValue">0.0</span>
+                            </div>
+                            <div class="triad-bar">
+                                <span class="triad-label">Financial</span>
+                                <div class="triad-progress">
+                                    <div class="triad-fill" id="financialBar" style="width: 0%"></div>
+                                </div>
+                                <span class="triad-value" id="financialValue">0.0</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-section">
+                        <h4>🎯 Extracted Intelligence</h4>
+                        <div class="intel-list" id="intelList">
+                            <p class="intel-empty">No intelligence extracted yet</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Dashboard Section -->
+    <section id="dashboard" class="dashboard">
+        <div class="container">
+            <div class="section-header">
+                <span class="section-badge">Analytics</span>
+                <h2 class="section-title">Monitoring <span class="gradient-text">Dashboard</span></h2>
+            </div>
+            <div class="dashboard-grid">
+                <div class="dashboard-card metrics">
+                    <h4>📈 Performance Metrics</h4>
+                    <div class="metrics-grid">
+                        <div class="metric">
+                            <span class="metric-value" id="totalSessions">0</span>
+                            <span class="metric-label">Total Sessions</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value" id="scamsDetected">0</span>
+                            <span class="metric-label">Scams Detected</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value" id="avgLatency">0ms</span>
+                            <span class="metric-label">Avg Latency</span>
+                        </div>
+                        <div class="metric">
+                            <span class="metric-value" id="intelScore">0%</span>
+                            <span class="metric-label">Intel Score</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-card profiles">
+                    <h4>🕵️ Top Scammer Profiles</h4>
+                    <div class="profiles-list" id="profilesList">
+                        <div class="profile-item">
+                            <div class="profile-risk high">85</div>
+                            <div class="profile-details">
+                                <span class="profile-id">scammer-a1b2c3</span>
+                                <span class="profile-upis">3 UPIs, 2 phones</span>
+                            </div>
+                        </div>
+                        <div class="profile-item">
+                            <div class="profile-risk medium">62</div>
+                            <div class="profile-details">
+                                <span class="profile-id">scammer-d4e5f6</span>
+                                <span class="profile-upis">2 UPIs, 1 bank</span>
+                            </div>
+                        </div>
+                        <div class="profile-item">
+                            <div class="profile-risk low">35</div>
+                            <div class="profile-details">
+                                <span class="profile-id">scammer-g7h8i9</span>
+                                <span class="profile-upis">1 UPI, 1 phone</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-card recent">
+                    <h4>🕐 Recent Detections</h4>
+                    <div class="recent-list" id="recentList">
+                        <div class="recent-item">
+                            <span class="recent-type bank">Bank Scam</span>
+                            <span class="recent-time">2 min ago</span>
+                        </div>
+                        <div class="recent-item">
+                            <span class="recent-type lottery">Lottery</span>
+                            <span class="recent-time">5 min ago</span>
+                        </div>
+                        <div class="recent-item">
+                            <span class="recent-type investment">Investment</span>
+                            <span class="recent-time">12 min ago</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="dashboard-card api-status">
+                    <h4>🔗 API Status</h4>
+                    <div class="api-info">
+                        <div class="api-endpoint">
+                            <span class="api-method">POST</span>
+                            <code>/message</code>
+                            <span class="api-status-badge online">Online</span>
+                        </div>
+                        <div class="api-endpoint">
+                            <span class="api-method">GET</span>
+                            <code>/analytics/{id}</code>
+                            <span class="api-status-badge online">Online</span>
+                        </div>
+                        <div class="api-endpoint">
+                            <span class="api-method">GET</span>
+                            <code>/profiles</code>
+                            <span class="api-status-badge online">Online</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+        <div class="container">
+            <div class="footer-content">
+                <div class="footer-brand">
+                    <span class="logo-icon">🛡️</span>
+                    <span>Anti-Scam Sentinel</span>
+                </div>
+                <div class="footer-links">
+                    <a href="https://github.com/ADITHYA-P-15/Anti-Scam-Agent" target="_blank">GitHub</a>
+                    <a href="https://github.com/ADITHYA-P-15/Anti-Scam-Agent#api-reference" target="_blank">API Docs</a>
+                    <a href="https://github.com/ADITHYA-P-15/Anti-Scam-Agent/issues" target="_blank">Report Issue</a>
+                </div>
+                <div class="footer-copy">
+                    © 2026 Anti-Scam Sentinel. MIT License.
+                </div>
+            </div>
+        </div>
+    </footer>
+
+    <script src="js/main.js"></script>
+</body>
+
+</html>
