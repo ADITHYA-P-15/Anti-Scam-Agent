@@ -260,35 +260,90 @@ class ConversationOrchestrator:
         }
     }
     
-    # Fallback responses by phase
+    # Fallback responses by phase - SMARTER, STRATEGIC RESPONSES
     FALLBACK_RESPONSES = {
         ConversationPhase.INITIAL_CONTACT: [
-            "Hello? Who is this?",
-            "Yes, speaking. Who is calling?",
-            "I'm sorry, what is this about?",
+            "Hello? Who is this calling?",
+            "Yes, speaking. May I know who this is?",
+            "Hi, I don't recognize this number. Who am I talking to?",
+            "Yes? This is regarding...?",
         ],
         ConversationPhase.TRUST_BUILDING: [
-            "Oh dear! Is this serious? Please explain what's happening.",
-            "What? My account is blocked? That's very worrying!",
-            "I'm concerned now. What do I need to do?",
+            "Oh I see, that does sound concerning. Can you tell me more about what happened?",
+            "Wait, what exactly is the issue with my account? I want to understand properly.",
+            "This is worrying me. Can you verify which account this is about?",
+            "I need more details before I proceed. What department are you calling from?",
+            "Before we continue, can you confirm the last 4 digits of my account?",
         ],
         ConversationPhase.HONEY_TOKEN_BAIT: [
-            "Okay, I'm ready to pay. What's your UPI ID? I need to type it exactly.",
-            "I want to do this now. Can you give me your bank account number?",
-            "My app is asking for a UPI ID. Can you spell it out for me?",
-            "What's your phone number? I want to call you if there's a problem.",
+            "Alright, I want to resolve this. What's your UPI ID so I can make the payment?",
+            "I'm ready to proceed. Can you give me your bank account details?",
+            "Let me note down your payment details. What's the UPI ID?",
+            "I'll transfer now. What's your account number and IFSC code?",
+            "Tell me where to send the money. UPI or bank transfer?",
+            "What's the exact UPI ID? I want to make sure I type it correctly.",
         ],
         ConversationPhase.EXTRACTION: [
-            "What if this payment method fails? Do you have a backup UPI?",
-            "Can you give me another account number just in case?",
-            "I'm having trouble. What's your phone number so I can call?",
-            "Do you have an alternate payment option?",
+            "The payment isn't going through. Do you have an alternate UPI ID?",
+            "My bank app is showing an error. Can you give me another account number?",
+            "What if this fails? Give me a backup payment method.",
+            "I need your phone number in case there's a problem with the transfer.",
+            "Can you share your manager's contact? I want to verify this is legitimate.",
+            "Do you have a different UPI? This one shows as invalid.",
         ],
         ConversationPhase.CLOSING: [
-            "Let me check with my bank first before I proceed.",
-            "I need to think about this. I'll call you back.",
-            "My grandson is telling me to be careful. Let me verify this first.",
+            "Actually, let me verify this with my bank first. What's your direct number?",
+            "Hold on, I need to confirm this with someone. I'll call you back.",
+            "This seems unusual. Let me check with my bank before proceeding.",
+            "My bank is saying I should verify this. Can you give me a reference number?",
+            "Wait, I want to double-check. What's your employee ID?",
         ]
+    }
+    
+    # PERSONA-SPECIFIC RESPONSES (smarter, more contextual)
+    PERSONA_RESPONSES = {
+        'elderly_tech_illiterate': {
+            ConversationPhase.INITIAL_CONTACT: [
+                "Hello? Who is speaking? I can't hear well...",
+                "Yes beta, speaking. Who is calling?",
+            ],
+            ConversationPhase.TRUST_BUILDING: [
+                "Oh my, is this serious? My son-in-law set up this account for me...",
+                "I don't understand these banking things. Can you explain simply?",
+            ],
+            ConversationPhase.HONEY_TOKEN_BAIT: [
+                "Beta, I want to pay but I don't know how to use this UPI thing. What's your ID?",
+                "My grandson usually helps me. Can you tell me your bank account number slowly?",
+            ],
+        },
+        'distracted_professional': {
+            ConversationPhase.INITIAL_CONTACT: [
+                "Yes? I'm in a meeting, be quick please.",
+                "Speaking. What's this about? I have 2 minutes.",
+            ],
+            ConversationPhase.TRUST_BUILDING: [
+                "Look, I'm very busy. Just tell me directly what the problem is.",
+                "I don't have time for this. What exactly needs to be done?",
+            ],
+            ConversationPhase.HONEY_TOKEN_BAIT: [
+                "Fine, give me your UPI ID. I'll transfer when I'm free.",
+                "Just send me the account details on WhatsApp. I'll handle it.",
+            ],
+        },
+        'worried_account_holder': {
+            ConversationPhase.INITIAL_CONTACT: [
+                "Hello? Is everything okay with my account?",
+                "Speaking. Is this about my bank account? I've been worried about fraud...",
+            ],
+            ConversationPhase.TRUST_BUILDING: [
+                "Oh god, is my money safe? I've heard about so many scams lately...",
+                "This is exactly what I was afraid of! What do I need to do?",
+            ],
+            ConversationPhase.HONEY_TOKEN_BAIT: [
+                "I want to fix this immediately. What's your UPI? And your employee ID to verify?",
+                "Let me pay right now. Give me your bank details and your official number.",
+            ],
+        },
     }
     
     # Responses for prompt injection (stay in character)
@@ -562,12 +617,19 @@ Generate ONLY your spoken response as this character (no quotes, no explanations
         return session
     
     def get_fallback_response(self, phase: str, persona: str = None) -> str:
-        """Get fallback response for fast zero-latency mode"""
+        """Get fallback response for fast zero-latency mode - uses persona-specific responses when available"""
         try:
             phase_enum = ConversationPhase(phase) if isinstance(phase, str) else phase
         except ValueError:
             phase_enum = ConversationPhase.INITIAL_CONTACT
         
+        # Try persona-specific responses first
+        if persona and persona in self.PERSONA_RESPONSES:
+            persona_responses = self.PERSONA_RESPONSES.get(persona, {})
+            if phase_enum in persona_responses:
+                return random.choice(persona_responses[phase_enum])
+        
+        # Fall back to general responses
         responses = self.FALLBACK_RESPONSES.get(phase_enum, self.FALLBACK_RESPONSES[ConversationPhase.TRUST_BUILDING])
         return random.choice(responses)
 
