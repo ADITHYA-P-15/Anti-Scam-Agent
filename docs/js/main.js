@@ -134,24 +134,61 @@ function mockAPIResponse(message) {
     const urgency = [/block/i, /immediate/i, /urgent/i, /24 hours/i].filter(p => p.test(lowerMsg)).length * 1.0;
     const authority = [/bank/i, /sbi/i, /kyc/i, /rbi/i, /hdfc/i].filter(p => p.test(lowerMsg)).length * 1.2;
     const emotion = [/lottery/i, /prize/i, /winner/i].filter(p => p.test(lowerMsg)).length * 1.0;
-    const financial = [/@paytm/i, /@ybl/i, /rs\.?\s*\d+/i, /send/i].filter(p => p.test(lowerMsg)).length * 0.8;
+    const financial = [/@paytm/i, /@ybl/i, /rs\.?\s*\d+/i, /send/i, /pay/i, /transfer/i].filter(p => p.test(lowerMsg)).length * 0.8;
     const total = Math.min(urgency, 3) + Math.min(authority, 3) + Math.min(emotion, 2) + Math.min(financial, 2);
     const isScam = total >= 2.5;
     const upiMatch = message.match(/\b[\w.]+@(paytm|ybl|okaxis|oksbi|okicici|gpay)\b/i);
     const upiIds = upiMatch ? [{ upi_id: upiMatch[0], bank_provider: { 'paytm': 'Paytm', 'ybl': 'Yes Bank', 'okaxis': 'Axis', 'oksbi': 'SBI', 'okicici': 'ICICI', 'gpay': 'GPay' }[upiMatch[1].toLowerCase()] || 'Unknown', verified: true }] : [];
     const phoneNumbers = (message.match(/\b[6-9]\d{9}\b/) || []).slice(0, 1);
     let scamType = 'unknown';
-    if (/bank|sbi|kyc/i.test(lowerMsg)) scamType = 'bank_impersonation';
-    else if (/lottery|prize/i.test(lowerMsg)) scamType = 'lottery';
-    const responses = {
-        bank_impersonation: ["Oh dear! What do I need to do?", "My grandson helps me with these things..."],
-        lottery: ["Wow! I won? That's amazing!", "Really? I never win anything!"],
-        unknown: ["Hello? Who is this?", "I'm sorry, what is this about?"],
+    if (/bank|sbi|kyc|account|hdfc|icici/i.test(lowerMsg)) scamType = 'bank_impersonation';
+    else if (/lottery|prize|winner|congrat/i.test(lowerMsg)) scamType = 'lottery';
+    else if (/investment|returns|profit|trading/i.test(lowerMsg)) scamType = 'investment';
+    else if (/job|offer|salary|work from home/i.test(lowerMsg)) scamType = 'job_offer';
+
+    // TURN-AWARE RESPONSES - progressively advance conversation
+    const turnCount = messageHistory.length;
+    const responsesByPhase = {
+        bank_impersonation: [
+            // Turn 1: Confused/worried
+            ["Oh my god! Is my account really blocked? What should I do?", "What? This is very worrying! Can you tell me more?", "Oh dear! What happened to my account?"],
+            // Turn 2-3: Trust building, asking for details
+            ["Wait, which bank did you say? I want to make sure this is real.", "Can you verify which account this is about?", "I need more details. What department are you from?"],
+            // Turn 4+: Honey token - asking for payment details
+            ["Okay, I want to fix this. What's your UPI ID so I can pay?", "I'm ready to pay. Give me your bank account number.", "Tell me where to send the money. What's the UPI?", "I'll transfer now. What's your UPI ID?"]
+        ],
+        lottery: [
+            ["Wow! I really won? That's incredible!", "I never win anything! This is amazing!"],
+            ["How do I claim my prize? I'm so excited!", "What do I need to do to get my winnings?"],
+            ["I want to claim it now! What's your UPI ID?", "Where do I send the processing fee? Give me the account details."]
+        ],
+        investment: [
+            ["20-30% returns? That sounds interesting!", "High returns? Tell me more..."],
+            ["How does this investment work? Is it safe?", "I want to understand better. What's the minimum investment?"],
+            ["Okay, I'm interested. What's your UPI ID for the deposit?", "Where do I transfer the investment amount?"]
+        ],
+        job_offer: [
+            ["A job offer? I've been looking for work!", "Really? I'm very interested in this opportunity!"],
+            ["What's the salary? What do I need to do?", "This sounds perfect! What are the requirements?"],
+            ["I want this job! What's your UPI for the registration fee?", "I'll pay immediately! Give me the payment details."]
+        ],
+        unknown: [
+            ["Hello? Who is this calling?", "Yes, speaking. What is this about?"],
+            ["I don't understand. Can you explain more clearly?", "What exactly do you need from me?"],
+            ["Okay, what do I need to do? Give me the details.", "I want to help. What information do you need?"]
+        ]
     };
+
+    // Select response based on turn count
+    const phaseIndex = Math.min(Math.floor(turnCount / 2), 2); // 0, 1, or 2
+    const responses = responsesByPhase[scamType] || responsesByPhase.unknown;
+    const phaseResponses = responses[Math.min(phaseIndex, responses.length - 1)];
+    const agentResponse = phaseResponses[Math.floor(Math.random() * phaseResponses.length)];
+
     return {
         session_id: sessionId, is_scam: isScam, confidence_score: Math.min(total / 10, 0.95),
         extracted_entities: { upi_ids: upiIds, phone_numbers: phoneNumbers, bank_accounts: [], urls: [], intel_completeness_score: upiIds.length * 30 + phoneNumbers.length * 15 },
-        agent_response: responses[scamType][Math.floor(Math.random() * responses[scamType].length)],
+        agent_response: agentResponse,
         forensics: { scam_type: scamType, persona_used: 'elderly_tech_illiterate' },
         metadata: { latency_ms: Math.floor(Math.random() * 200) + 100, typing_behavior: { typing_delay_ms: 1500 } },
         _triad: { urgency: Math.min(urgency, 3), authority: Math.min(authority, 3), emotion: Math.min(emotion, 2), financial: Math.min(financial, 2) },
