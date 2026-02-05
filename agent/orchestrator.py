@@ -456,11 +456,18 @@ class ConversationOrchestrator:
         """
         phase = session.get('current_phase', ConversationPhase.INITIAL_CONTACT)
         
+        # Convert string phase to enum if needed
+        if isinstance(phase, str):
+            try:
+                phase = ConversationPhase(phase)
+            except ValueError:
+                phase = ConversationPhase.TRUST_BUILDING
+        
         # Handle prompt injection - stay in confused character
         if detection_result.injection_detected:
             response = random.choice(self.INJECTION_RESPONSES)
             logger.info("Prompt injection handled - staying in character")
-            return {'message': response, 'phase': phase, 'llm_used': 'template'}
+            return {'message': response, 'phase': phase.value, 'llm_used': 'template'}
         
         # Select persona if not set
         if not session.get('persona'):
@@ -473,7 +480,7 @@ class ConversationOrchestrator:
         if not detection_result.is_scam and not detection_result.detected_patterns:
             return {
                 'message': "Hello? I'm sorry, I think you have the wrong number.",
-                'phase': phase,
+                'phase': phase.value,
                 'llm_used': 'template'
             }
         
