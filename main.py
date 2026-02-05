@@ -366,7 +366,7 @@ async def handle_message_v2(
         )
         
         logger.info(
-            f"Session {event.session_id}: Fast response in {latency*1000:.0f}ms "
+            f"Session {session_id}: Fast response in {latency*1000:.0f}ms "
             f"(phase={phase_str}, frustration={frustration})"
         )
         
