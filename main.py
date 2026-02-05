@@ -109,6 +109,45 @@ async def health_check():
     }
 
 
+@app.get("/")
+async def root():
+    """Root endpoint - API info"""
+    return {
+        "name": "Anti-Scam Sentinel API",
+        "version": "2.0.0",
+        "description": "Intelligent honeypot agent for scam detection and intelligence extraction",
+        "endpoints": {
+            "health": "GET /health",
+            "message": "POST /message",
+            "analyze": "GET /analyze?message=...",
+            "metrics": "GET /metrics",
+            "docs": "GET /docs"
+        }
+    }
+
+
+@app.get("/analyze")
+async def analyze_message_get(message: str, session_id: str = "default"):
+    """GET version of analyze for hackathon compatibility"""
+    # Quick scam detection
+    detection = detector.quick_detect(message)
+    entities = await extractor.extract_intelligence(message, {})
+    
+    return {
+        "session_id": session_id,
+        "is_scam": detection.is_scam,
+        "confidence_score": detection.confidence,
+        "scam_type": detection.scam_type,
+        "threat_level": detection.threat_level,
+        "extracted_entities": {
+            "upi_ids": [u.model_dump() if hasattr(u, 'model_dump') else u for u in entities.get('upi_ids', [])],
+            "phone_numbers": entities.get('phone_numbers', []),
+            "bank_accounts": entities.get('bank_accounts', []),
+        },
+        "message": "Scam detected! Stay safe." if detection.is_scam else "No scam detected."
+    }
+
+
 # =============================================================================
 # MAIN MESSAGE ENDPOINT (ZERO-LATENCY VERSION)
 # =============================================================================
